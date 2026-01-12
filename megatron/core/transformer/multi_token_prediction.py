@@ -428,9 +428,9 @@ class MTPLossLoggingHelper:
                 acc = mtp_accs[i]
                 if total_loss_dict is not None:
                     if name in total_loss_dict:
-                        total_loss_dict[name] += loss
+                        total_loss_dict[name] += acc
                     else:
-                        total_loss_dict[name] = loss
+                        total_loss_dict[name] = acc
                 if writer is not None:
                     writer.add_scalar(name, acc, iteration)
                 if wandb_writer is not None:
