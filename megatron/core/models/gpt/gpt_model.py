@@ -592,6 +592,18 @@ class GPTModel(LanguageModule):
                             with_context_parallel=True
                         ),
                     )
+                    
+                    with torch.no_grad():
+                        predictions = torch.argmax(mtp_logits, dim=-1)
+                        mtp_acc = (predictions == mtp_labels) * loss_mask
+                        MTPLossLoggingHelper.save_acc_to_tracker(
+                            torch.sum(mtp_acc) / num_tokens,
+                            mtp_layer_number,
+                            self.config.mtp_num_layers,
+                            avg_group=parallel_state.get_data_parallel_group(
+                                with_context_parallel=True
+                            ),
+                        )
                 mtp_loss_scale = self.config.mtp_loss_scaling_factor / self.config.mtp_num_layers
                 if self.config.calculate_per_token_loss:
                     hidden_states = MTPLossAutoScaler.apply(

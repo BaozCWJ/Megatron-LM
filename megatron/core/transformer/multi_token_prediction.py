@@ -339,47 +339,97 @@ class MTPLossLoggingHelper:
         tracker["reduce_group"] = reduce_group
         tracker["avg_group"] = avg_group
 
+    @staticmethod
+    def save_acc_to_tracker(
+        acc: torch.Tensor,
+        layer_number: int,
+        num_layers: int,
+        reduce_group: Optional[torch.distributed.ProcessGroup] = None,
+        avg_group: Optional[torch.distributed.ProcessGroup] = None,
+    ):
+        """Save the mtp acc for logging.
+        Args:
+            acc (torch.Tensor): The acc tensor.
+            layer_number (int): Layer index of the acc.
+            num_layers (int): The number of total layers.
+            reduce_group (torch.distributed.ProcessGroup): The group for reducing the acc.
+            mean_group (torch.distributed.ProcessGroup): The group for averaging the acc.
+        """
+        # Skip mtp acc logging if layer_number is None.
+        if layer_number is None:
+            return
+
+        tracker = MTPLossLoggingHelper.tracker
+        if "acc_values" not in tracker:
+            tracker["acc_values"] = torch.zeros(num_layers, device=torch.cuda.current_device())
+        tracker["acc_values"][layer_number] += acc.detach()
+        tracker["reduce_group"] = reduce_group
+        tracker["avg_group"] = avg_group
+
     def clean_loss_in_tracker():
         """Clear the mtp losses."""
         tracker = MTPLossLoggingHelper.tracker
-        tracker["values"].zero_()
+        if "values" in tracker:
+            tracker["values"].zero_()
+        if "acc_values" in tracker:
+            tracker["acc_values"].zero_()
         tracker["reduce_group"] = None
         tracker["avg_group"] = None
 
     def reduce_loss_in_tracker():
         """Collect and reduce the mtp losses across ranks."""
         tracker = MTPLossLoggingHelper.tracker
-        if "values" not in tracker:
-            return
-        values = tracker["values"]
-        # Reduce mtp losses across ranks.
-        if tracker.get('reduce_group') is not None:
-            torch.distributed.all_reduce(values, group=tracker.get('reduce_group'))
-        if tracker.get('avg_group') is not None:
-            torch.distributed.all_reduce(
-                values, group=tracker['avg_group'], op=torch.distributed.ReduceOp.AVG
-            )
+
+        if "values" in tracker:
+            values = tracker["values"]
+            # Reduce mtp losses across ranks.
+            if tracker.get('reduce_group') is not None:
+                torch.distributed.all_reduce(values, group=tracker.get('reduce_group'))
+            if tracker.get('avg_group') is not None:
+                torch.distributed.all_reduce(
+                    values, group=tracker['avg_group'], op=torch.distributed.ReduceOp.AVG
+                )
+
+        if "acc_values" in tracker:
+            acc_values = tracker["acc_values"]
+            # Reduce mtp acc across ranks.
+            if tracker.get('reduce_group') is not None:
+                torch.distributed.all_reduce(acc_values, group=tracker.get('reduce_group'))
+            if tracker.get('avg_group') is not None:
+                torch.distributed.all_reduce(
+                    acc_values, group=tracker['avg_group'], op=torch.distributed.ReduceOp.AVG
+                )
 
     def track_mtp_metrics(loss_scale, iteration, writer, wandb_writer=None, total_loss_dict=None):
         """Track the Multi-Token Prediction (MTP) metrics for logging."""
         MTPLossLoggingHelper.reduce_loss_in_tracker()
         tracker = MTPLossLoggingHelper.tracker
-        if "values" not in tracker:
-            return
-        mtp_losses = tracker["values"] * loss_scale
-        mtp_num_layers = mtp_losses.shape[0]
-        for i in range(mtp_num_layers):
-            name = f"mtp_{i+1} loss"
-            loss = mtp_losses[i]
-            if total_loss_dict is not None:
-                if name in total_loss_dict:
-                    total_loss_dict[name] += loss
-                else:
-                    total_loss_dict[name] = loss
-            if writer is not None:
-                writer.add_scalar(name, loss, iteration)
-            if wandb_writer is not None:
-                wandb_writer.log({f"{name}": loss}, iteration)
+        if "values" in tracker:
+            mtp_losses = tracker["values"] * loss_scale
+            mtp_num_layers = mtp_losses.shape[0]
+            for i in range(mtp_num_layers):
+                name = f"mtp_{i+1} loss"
+                loss = mtp_losses[i]
+                if total_loss_dict is not None:
+                    if name in total_loss_dict:
+                        total_loss_dict[name] += loss
+                    else:
+                        total_loss_dict[name] = loss
+                if writer is not None:
+                    writer.add_scalar(name, loss, iteration)
+                if wandb_writer is not None:
+                    wandb_writer.log({f"{name}": loss}, iteration)
+
+        if "acc_values" in tracker:
+            mtp_accs = tracker["acc_values"] * loss_scale
+            mtp_num_layers = mtp_accs.shape[0]
+            for i in range(mtp_num_layers):
+                name = f"mtp_{i+1} acc"
+                acc = mtp_accs[i]
+                if writer is not None:
+                    writer.add_scalar(name, acc, iteration)
+                if wandb_writer is not None:
+                    wandb_writer.log({f"{name}": acc}, iteration)
 
         MTPLossLoggingHelper.clean_loss_in_tracker()
 
