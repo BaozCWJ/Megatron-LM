@@ -362,7 +362,9 @@ class MTPLossLoggingHelper:
         tracker = MTPLossLoggingHelper.tracker
         if "acc_values" not in tracker:
             tracker["acc_values"] = torch.zeros(num_layers, device=torch.cuda.current_device())
+            tracker["acc_count"] = torch.zeros(num_layers, device=torch.cuda.current_device())
         tracker["acc_values"][layer_number] += acc.detach()
+        tracker["acc_count"][layer_number] += 1
         tracker["reduce_group"] = reduce_group
         tracker["avg_group"] = avg_group
 
@@ -373,6 +375,7 @@ class MTPLossLoggingHelper:
             tracker["values"].zero_()
         if "acc_values" in tracker:
             tracker["acc_values"].zero_()
+            tracker["acc_count"].zero_()
         tracker["reduce_group"] = None
         tracker["avg_group"] = None
 
@@ -391,7 +394,7 @@ class MTPLossLoggingHelper:
                 )
 
         if "acc_values" in tracker:
-            acc_values = tracker["acc_values"]
+            acc_values = tracker["acc_values"]/tracker["acc_count"]
             # Reduce mtp acc across ranks.
             if tracker.get('reduce_group') is not None:
                 torch.distributed.all_reduce(acc_values, group=tracker.get('reduce_group'))
@@ -428,9 +431,9 @@ class MTPLossLoggingHelper:
                 acc = mtp_accs[i]
                 if total_loss_dict is not None:
                     if name in total_loss_dict:
-                        total_loss_dict[name] += loss
+                        total_loss_dict[name] += acc
                     else:
-                        total_loss_dict[name] = loss
+                        total_loss_dict[name] = acc
                 if writer is not None:
                     writer.add_scalar(name, acc, iteration)
                 if wandb_writer is not None:
