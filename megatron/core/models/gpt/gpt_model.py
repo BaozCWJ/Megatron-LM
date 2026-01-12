@@ -595,7 +595,7 @@ class GPTModel(LanguageModule):
                     
                     with torch.no_grad():
                         predictions = torch.argmax(mtp_logits, dim=-1)
-                        mtp_acc = (predictions == mtp_labels) * loss_mask
+                        mtp_acc = (predictions.transpose(0, 1) == mtp_labels) * loss_mask
                         MTPLossLoggingHelper.save_acc_to_tracker(
                             torch.sum(mtp_acc) / num_tokens,
                             mtp_layer_number,

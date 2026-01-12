@@ -421,11 +421,16 @@ class MTPLossLoggingHelper:
                     wandb_writer.log({f"{name}": loss}, iteration)
 
         if "acc_values" in tracker:
-            mtp_accs = tracker["acc_values"] * loss_scale
+            mtp_accs = tracker["acc_values"]
             mtp_num_layers = mtp_accs.shape[0]
             for i in range(mtp_num_layers):
                 name = f"mtp_{i+1} acc"
                 acc = mtp_accs[i]
+                if total_loss_dict is not None:
+                    if name in total_loss_dict:
+                        total_loss_dict[name] += loss
+                    else:
+                        total_loss_dict[name] = loss
                 if writer is not None:
                     writer.add_scalar(name, acc, iteration)
                 if wandb_writer is not None:
