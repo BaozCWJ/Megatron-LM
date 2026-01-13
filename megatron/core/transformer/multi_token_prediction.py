@@ -424,7 +424,7 @@ class MTPLossLoggingHelper:
                     wandb_writer.log({f"{name}": loss}, iteration)
 
         if "acc_values" in tracker:
-            mtp_accs = tracker["acc_values"]
+            mtp_accs = tracker["acc_values"]/tracker["acc_count"]
             mtp_num_layers = mtp_accs.shape[0]
             for i in range(mtp_num_layers):
                 name = f"mtp_{i+1} acc"
